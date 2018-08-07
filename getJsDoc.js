@@ -1,40 +1,12 @@
 const parser = require('@babel/parser');
+const fs = require('fs');
+const path = require('path');
 
 const RESULT = {
   name: null,
   properties: {},
   actions: {},
   views: {}
-};
-
-const template = () => {
-  types
-    .model("TodoStore", {
-      loaded: types.boolean   ,
-      endpoint: "http://localhost",
-      todos: types.array(Todo),
-      selectedTodo: types.reference(Todo)
-    })
-    .views(self => {
-      return {
-        get completedTodos() {
-          return self.todos.filter(t => t.done)
-        },
-        findTodosByUser(user) {
-          return self.todos.filter(t => t.assignee === user)
-        }
-      };
-    })
-    .actions(self => {
-      return {
-        addTodo(title) {
-          self.todos.push({
-            id: Math.random(),
-            title
-          })
-        }
-      };
-    })
 };
 
 const variables = {
@@ -268,7 +240,7 @@ const getPropType = value => {
 };
 
 (() => {
-  const code = template.toString().slice(7, -1).trim();
+  const code = fs.readFileSync(path.resolve('./model.js')).toString().trim();
   const ast = parser.parse(code);
 
   console.log(JSON.stringify(ast.program));
