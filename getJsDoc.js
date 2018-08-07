@@ -9,18 +9,18 @@ const RESULT = {
 
 const template = () => {
   types
-    .model("TodoStore", {                             // 1
-      loaded: types.boolean   ,                      // 2
-      endpoint: "http://localhost",                 // 3
-      todos: types.array(Todo),                     // 4
-      selectedTodo: types.reference(Todo)           // 5
+    .model("TodoStore", {
+      loaded: types.boolean   ,
+      endpoint: "http://localhost",
+      todos: types.array(Todo),
+      selectedTodo: types.reference(Todo)
     })
     .views(self => {
       return {
-        get completedTodos() {                    // 6
+        get completedTodos() {
           return self.todos.filter(t => t.done)
         },
-        findTodosByUser(user) {                   // 7
+        findTodosByUser(user) {
           return self.todos.filter(t => t.assignee === user)
         }
       };
@@ -212,6 +212,11 @@ const getPropType = value => {
         type = getPropType(args[0]).type;
         break;
       }
+      case 'types.maybe': {
+        isOptional = true;
+        type = getPropType(args[0]).type;
+        break;
+      }
     }
   } else {
     switch (value) {
@@ -267,8 +272,7 @@ const getPropType = value => {
 
   let result = [];
   if (RESULT.name) {
-    let name = RESULT.name;
-    result.push(`@typedef {{}} ${name[0].toUpperCase() + name.substr(1)}`);
+    result.push(`@typedef {{}} ${RESULT.name}`);
   }
   Object.keys(RESULT.properties).forEach(key => {
     const value = RESULT.properties[key];
