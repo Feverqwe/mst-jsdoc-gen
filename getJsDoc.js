@@ -80,7 +80,7 @@ const actions = {
     return parseActions(node.body, node);
   },
   ObjectMethod: node => {
-    return [node.kind, parseActions(node.key)];
+    return [node.kind, parseActions(node.key, node)];
   },
   BlockStatement: node => {
     return node.body.filter(child => child.type === 'ReturnStatement').map(child => parseActions(child, node))[0];
@@ -89,9 +89,12 @@ const actions = {
     return parseActions(node.argument, node);
   },
   ObjectProperty: node => {
-    const key = parseActions(node.key);
-    const value = parseActions(node.value);
-    return ['method', value];
+    const key = parseActions(node.key, node);
+    const value = parseActions(node.value, node);
+    return ['method', key];
+  },
+  CallExpression: node => {
+    return parseActions(node.callee, node);
   },
   Identifier: node => {
     return node.name;
@@ -205,6 +208,10 @@ const getPropType = value => {
       }
       case 'types.reference': {
         type = getPropType(args[0]).type;
+        break;
+      }
+      case 'types.enumeration': {
+        type = getPropType('types.string').type;
         break;
       }
       case 'types.optional': {
