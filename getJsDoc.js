@@ -42,6 +42,9 @@ const variables = {
   StringLiteral: node => {
     return 'types.string';
   },
+  NumericLiteral: node => {
+    return 'types.number';
+  },
 };
 
 const actions = {
@@ -70,6 +73,11 @@ const actions = {
   },
   Identifier: node => {
     return node.name;
+  },
+  MemberExpression: node => {
+    const obj = parseActions(node.object, node);
+    const props = parseActions(node.property, node);
+    return [obj, props].join('.');
   },
 };
 
