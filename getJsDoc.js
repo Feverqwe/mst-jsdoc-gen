@@ -235,7 +235,7 @@ function getModelMethods(node) {
       }
       case 'CallExpression': {
         if (node.callee.type === 'Identifier' && node.callee.name === 'flow') {
-          return 'Promise'
+          return 'function:Promise'
         } else {
           return 'function';
         }
