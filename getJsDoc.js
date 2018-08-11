@@ -56,9 +56,19 @@ const ModelVisitor = {
         }
         case 'actions':
         case 'views': {
-          const fn = path.get('arguments.0');
           const methods = state[property.name] = {};
-          fn.traverse(ActionVisitor, methods);
+          const fn = path.get('arguments.0.body');
+          let returnNodeIndex = null;
+          fn.node.body.some((node, index) => {
+            if (node.type === 'ReturnStatement') {
+              returnNodeIndex = index;
+              return true;
+            }
+          });
+          const result = fn.get(`body.${returnNodeIndex}.argument`);
+          if (result) {
+            getActions(result, methods);
+          }
           break;
         }
       }
@@ -66,42 +76,37 @@ const ModelVisitor = {
   }
 };
 
-const ActionVisitor = {
-  ReturnStatement(path, state) {
-    const result = path.get('argument');
-    if (result) {
-      if (result.node.type === 'ObjectExpression') {
-        result.node.properties.forEach((propNode, index) => {
-          const propPath = result.get(`properties.${index}`);
-          if (propPath.node.type === 'ObjectProperty') {
-            const keyNode = propPath.node.key;
-            const valueNode = propPath.node.value;
-            if (keyNode.type === 'Identifier') {
-              state[keyNode.name] = getModelMethods(valueNode);
-            } else {
-              console.error('Unknown action property key', keyNode);
-            }
-          } else
-          if (propPath.node.type === 'ObjectMethod') {
-            const keyNode = propPath.node.key;
-            const bodyNode = propPath.node.body;
-            if (keyNode.type === 'Identifier') {
-              if (propPath.node.kind === 'method') {
-                state[keyNode.name] = 'function'
-              } else {
-                state[keyNode.name] = '*';
-              }
-            } else {
-              console.error('Unknown action property key', keyNode);
-            }
+const getActions = (result, state) => {
+  if (result.node.type === 'ObjectExpression') {
+    result.node.properties.forEach((propNode, index) => {
+      const propPath = result.get(`properties.${index}`);
+      if (propPath.node.type === 'ObjectProperty') {
+        const keyNode = propPath.node.key;
+        const valueNode = propPath.node.value;
+        if (keyNode.type === 'Identifier') {
+          state[keyNode.name] = getModelMethods(valueNode);
+        } else {
+          console.error('Unknown action property key', keyNode);
+        }
+      } else
+      if (propPath.node.type === 'ObjectMethod') {
+        const keyNode = propPath.node.key;
+        const bodyNode = propPath.node.body;
+        if (keyNode.type === 'Identifier') {
+          if (propPath.node.kind === 'method') {
+            state[keyNode.name] = 'function'
           } else {
-            console.error('Unknown action property type', propPath.node);
+            state[keyNode.name] = '*';
           }
-        });
+        } else {
+          console.error('Unknown action property key', keyNode);
+        }
       } else {
-        console.error('Unknown action argument', result.node);
+        console.error('Unknown action property type', propPath.node);
       }
-    }
+    });
+  } else {
+    console.error('Unknown action argument', result.node);
   }
 };
 
@@ -348,6 +353,9 @@ function getModelPropertyValue(node) {
         return {
           type: 'string'
         };
+      }
+      case 'ArrayExpression': {
+        return '[]';
       }
       default: {
         console.error(`Type is not found ${node.type}`, node);
