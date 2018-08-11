@@ -118,7 +118,7 @@ traverse(ast, {
         if (!pathModelMap.has(modelStartPath)) {
           let modelPath = null;
           let replaceTo = identifier => identifier;
-          if (modelStartPath.node.type === 'ExpressionStatement') {
+          if (['VariableDeclarator', 'ExpressionStatement', 'CallExpression'].includes(modelStartPath.node.type)) {
             modelPath = modelStartPath;
           } else
           if (modelStartPath.node.type === 'ObjectProperty') {
@@ -158,7 +158,7 @@ Array.from(pathModelMap.values()).forEach(model => {
 function getModelJsDoc(model) {
   const result = [];
 
-  result.push(['@typedef', model.name || `Model#${model.id}`]);
+  result.push(['@typedef', '{{}}', model.name || `Model#${model.id}`]);
 
   const getFloatModelProps = model => {
     if (model.name) {
@@ -303,13 +303,19 @@ function getModelPropertyValue(node) {
             break;
           }
           case 'optional':
+            return result.arguments[0];
           case 'maybeNull':
           case 'maybe': {
             const type = result.arguments[0];
-            return {
-              type: type,
-              optional: true
-            };
+            if (typeof type === 'string') {
+              return {
+                type: type,
+                optional: true
+              };
+            } else {
+              type.optional = true;
+              return type;
+            }
           }
           case 'enumeration':
           case 'literal': {
@@ -321,8 +327,12 @@ function getModelPropertyValue(node) {
               return type;
             }
             break;
-          case 'compose':
           case 'frozen':
+            return {
+              type: '*',
+              optional: true
+            };
+          case 'compose':
           case 'late':
           case 'refinement':
           case 'union': {
@@ -356,6 +366,12 @@ function getModelPropertyValue(node) {
       }
       case 'ArrayExpression': {
         return '[]';
+      }
+      case 'BooleanLiteral': {
+        return 'boolean';
+      }
+      case 'NumericLiteral': {
+        return 'number';
       }
       default: {
         console.error(`Type is not found ${node.type}`, node);
