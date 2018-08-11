@@ -1,286 +1,405 @@
+const traverse = require('@babel/traverse').default;
 const parser = require('@babel/parser');
+const types = require('@babel/types');
 const fs = require('fs');
 const path = require('path');
 
-const RESULT = {
-  name: null,
-  properties: {},
-  actions: {},
-  views: {}
-};
+const code = fs.readFileSync(path.resolve('./model.js')).toString().trim();
+const ast = parser.parse(code);
 
-const variables = {
-  ObjectExpression: node => {
-    return node.properties.map(child => parseVars(child, node));
-  },
-  ObjectProperty: node => {
-    const key = parseVars(node.key);
-    const value = parseVars(node.value);
-    return [key, value];
-  },
-  CallExpression: node => {
-    return {
-      type: 'function',
-      callee: parseVars(node.callee),
-      args: node.arguments.map(child => parseVars(child, node))
-    };
-  },
-  MemberExpression: node => {
-    const obj = parseVars(node.object, node);
-    const props = parseVars(node.property, node);
-    return [obj, props].join('.');
-  },
-  Identifier: node => {
-    return node.name;
-  },
-  ArrayExpression: node => {
-    return '[]';
-  },
-  BooleanLiteral: node => {
-    return 'types.boolean';
-  },
-  StringLiteral: node => {
-    return 'types.string';
-  },
-  NumericLiteral: node => {
-    return 'types.number';
-  },
-};
+let id = 0;
 
-const actions = {
-  ObjectExpression: node => {
-    return node.properties.map(child => parseActions(child, node));
-  },
-  ArrowFunctionExpression: node => {
-    return parseActions(node.body, node);
-  },
-  ObjectMethod: node => {
-    return [node.kind, parseActions(node.key, node)];
-  },
-  BlockStatement: node => {
-    return node.body.filter(child => child.type === 'ReturnStatement').map(child => parseActions(child, node))[0];
-  },
-  ReturnStatement: node => {
-    return parseActions(node.argument, node);
-  },
-  ObjectProperty: node => {
-    const key = parseActions(node.key, node);
-    const value = parseActions(node.value, node);
-    return ['method', key];
-  },
-  CallExpression: node => {
-    return parseActions(node.callee, node);
-  },
-  Identifier: node => {
-    return node.name;
-  },
-  MemberExpression: node => {
-    const obj = parseActions(node.object, node);
-    const props = parseActions(node.property, node);
-    return [obj, props].join('.');
-  },
-};
+console.log('ast', JSON.stringify(clean(ast)));
 
-const model = {
-  ExpressionStatement: node => {
-    return parseModel(node.expression, node);
-  },
-  CallExpression: node => {
-    return parseModel(node.callee, node);
-  },
-  MemberExpression: node => {
-    const obj = parseModel(node.object, node);
-    const props = parseModel(node.property, node);
-    const result = [obj, props].join('.');
-    if (result === 'types.model') {
-      let name = null;
-      const fistArg = node._parent().arguments[0];
-      if (fistArg.type === 'StringLiteral') {
-        name = fistArg.value;
-        node._parent().arguments.shift();
-      }
-      const vars = parseVars(node._parent().arguments[0]);
-      RESULT.name = name;
-      vars.forEach(([key, value]) => {
-        RESULT.properties[key] = value;
-      });
-      console.log('Variables', JSON.stringify(vars));
-    } else
-    if (result === '.views') {
-      const actions = parseActions(node._parent().arguments[0]);
-      actions.forEach(([kind, name]) => {
-        RESULT.views[name] = kind;
-      });
-      console.log('Views', JSON.stringify(actions));
-    } else
-    if (result === '.actions') {
-      const actions = parseActions(node._parent().arguments[0]);
-      actions.forEach(([kind, name]) => {
-        RESULT.actions[name] = kind;
-      });
-      console.log('Actions', JSON.stringify(actions));
-    }
-  },
-  Identifier: node => {
-    return node.name;
+const pathModelMap = new Map();
+const idModelMap = new Map();
+
+class Model {
+  constructor() {
+    this.id = ++id;
   }
-};
+}
 
-const parseVars = (node, parentNode) => {
-  node._parent = () => parentNode;
-  if (!variables[node.type]) {
-    console.log(node.type);
-  }
-  return variables[node.type](node);
-};
-
-const parseActions = (node, parentNode) => {
-  node._parent = () => parentNode;
-  if (!actions[node.type]) {
-    console.log(node.type);
-  }
-  return actions[node.type](node);
-};
-
-const parseModel = (node, parentNode) => {
-  node._parent = () => parentNode;
-  return model[node.type](node);
-};
-
-const getType = kind => {
-  let type = '';
-  switch (kind) {
-    case 'method': {
-      type = 'function';
-      break;
-    }
-    case 'get': {
-      type = '*';
-      break;
-    }
-  }
-  if (type) {
-    type = `{${type}} `;
-  }
-  return type;
-};
-
-const getPropType = value => {
-  let type = '*';
-  let isOptional = false;
-  if (value.type === 'function') {
-    let {callee, args} = value;
-    switch (callee) {
-      case 'types.identifier': {
-        if (!args.length) {
-          args.push('types.string');
+const ModelVisitor = {
+  CallExpression(path, state) {
+    const args = path.node.arguments;
+    const callee = path.node.callee;
+    const property = callee.property;
+    if (callee.type === 'MemberExpression' && property.type === 'Identifier') {
+      switch (property.name) {
+        case 'model': {
+          let modelProps = path.get('arguments.0');
+          if (modelProps.node.type === 'StringLiteral') {
+            state.name = args[0].value;
+            modelProps = path.get('arguments.1');
+          }
+          const properties = state.properties = {};
+          if (modelProps.node.type === 'ObjectExpression') {
+            modelProps.node.properties.forEach((propNode, index) => {
+              const propPath = modelProps.get(`properties.${index}`);
+              if (propPath.node.type === 'ObjectProperty') {
+                const keyNode = propPath.node.key;
+                const valueNode = propPath.node.value;
+                if (keyNode.type === 'Identifier') {
+                  properties[keyNode.name] = getModelPropertyValue(valueNode);
+                } else {
+                  console.error('Unknown model property key', keyNode);
+                }
+              } else {
+                console.error('Unknown model property type', propPath.node);
+              }
+            });
+          } else {
+            console.error('Unknown model argument', modelProps.node);
+          }
+          break;
         }
-        type = getPropType(args[0]).type;
-        break;
-      }
-      case 'types.array': {
-        type = `${getPropType(args[0]).type}[]`;
-        break;
-      }
-      case 'types.map': {
-        type = `Map<*,${getPropType(args[0]).type}>`;
-        break;
-      }
-      case 'types.reference': {
-        type = getPropType(args[0]).type;
-        break;
-      }
-      case 'types.enumeration': {
-        type = getPropType('types.string').type;
-        break;
-      }
-      case 'types.optional': {
-        isOptional = true;
-        type = getPropType(args[0]).type;
-        break;
-      }
-      case 'types.maybe': {
-        isOptional = true;
-        type = getPropType(args[0]).type;
-        break;
+        case 'actions':
+        case 'views': {
+          const fn = path.get('arguments.0');
+          const methods = state[property.name] = {};
+          fn.traverse(ActionVisitor, methods);
+          break;
+        }
       }
     }
-  } else {
-    switch (value) {
-      case 'types.string': {
-        type = 'string';
-        break;
+  }
+};
+
+const ActionVisitor = {
+  ReturnStatement(path, state) {
+    const result = path.get('argument');
+    if (result) {
+      if (result.node.type === 'ObjectExpression') {
+        result.node.properties.forEach((propNode, index) => {
+          const propPath = result.get(`properties.${index}`);
+          if (propPath.node.type === 'ObjectProperty') {
+            const keyNode = propPath.node.key;
+            const valueNode = propPath.node.value;
+            if (keyNode.type === 'Identifier') {
+              state[keyNode.name] = getModelMethods(valueNode);
+            } else {
+              console.error('Unknown action property key', keyNode);
+            }
+          } else
+          if (propPath.node.type === 'ObjectMethod') {
+            const keyNode = propPath.node.key;
+            const bodyNode = propPath.node.body;
+            if (keyNode.type === 'Identifier') {
+              if (propPath.node.kind === 'method') {
+                state[keyNode.name] = 'function'
+              } else {
+                state[keyNode.name] = '*';
+              }
+            } else {
+              console.error('Unknown action property key', keyNode);
+            }
+          } else {
+            console.error('Unknown action property type', propPath.node);
+          }
+        });
+      } else {
+        console.error('Unknown action argument', result.node);
       }
-      case 'types.number': {
-        type = 'number';
-        break;
+    }
+  }
+};
+
+traverse(ast, {
+  MemberExpression(path) {
+    if (path.node.object.name === 'types' && path.node.property.name === 'model') {
+      const modelStartPath = getModelStart(path);
+      if (modelStartPath) {
+        if (!pathModelMap.has(modelStartPath)) {
+          let modelPath = null;
+          let replaceTo = identifier => identifier;
+          if (modelStartPath.node.type === 'ExpressionStatement') {
+            modelPath = modelStartPath;
+          } else
+          if (modelStartPath.node.type === 'ObjectProperty') {
+            modelPath = modelStartPath;
+            replaceTo = identifier => {
+              return types.objectProperty(modelPath.node.key, identifier);
+            };
+          }
+          if (modelPath) {
+            let model = new Model();
+            const id = `Model#${model.id}`;
+            const clone = modelPath.node;
+            modelPath.replaceWith(replaceTo(types.identifier(id)));
+            modelPath.node = clone;
+            pathModelMap.set(modelPath, model);
+            idModelMap.set(id, model);
+          } else {
+            console.error('Model path not found', modelStartPath.node);
+          }
+        }
       }
-      case 'types.integer': {
-        type = 'integer';
-        break;
+    }
+  }
+});
+
+Array.from(pathModelMap.keys()).forEach(path => {
+  const model = pathModelMap.get(path);
+  path.traverse(ModelVisitor, model);
+});
+
+Array.from(pathModelMap.values()).forEach(model => {
+  if (model.name || !model.ref) {
+    console.log(getModelJsDoc(model));
+  }
+});
+
+function getModelJsDoc(model) {
+  const result = [];
+
+  result.push(['@typedef', model.name || `Model#${model.id}`]);
+
+  const getFloatModelProps = model => {
+    if (model.name) {
+      return {type: model.name};
+    }
+    const result = [];
+    model.properties && Object.keys(model.properties).forEach(key => {
+      let value = model.properties[key];
+      const type = getPropType(value);
+      result.push([key, type.type]);
+    });
+    model.actions && Object.keys(model.actions).forEach(key => {
+      const value = model.actions[key];
+      const type = getActionType(value);
+      result.push([key, type.type]);
+    });
+    model.views && Object.keys(model.views).forEach(key => {
+      const value = model.views[key];
+      const type = getActionType(value);
+      result.push([key, type.type]);
+    });
+    return {type: `{${result.map(item => item.join(':')).join(',')}}`}
+  };
+  const getActionType = value => {
+    if (!value) {
+      console.error('Unknown action', key, value);
+    }
+    return {type: value};
+  };
+  const getPropType = value => {
+    if (typeof value === 'string') {
+      value = {type: value};
+    }
+    if (value instanceof Model) {
+      value = getFloatModelProps(value);
+    }
+    if (!value.type) {
+      console.error('Unknown type', value);
+    }
+    return value;
+  };
+  model.properties && Object.keys(model.properties).forEach(key => {
+    let value = model.properties[key];
+    const type = getPropType(value);
+    let name = key;
+    if (type.optional) {
+      name = `[${name}]`;
+    }
+    result.push(['@property', `{${type.type}}`, name]);
+  });
+
+  model.actions && Object.keys(model.actions).forEach(key => {
+    const value = model.actions[key];
+    const type = getActionType(value);
+    result.push(['@property', `{${type.type}}`, key]);
+  });
+  model.views && Object.keys(model.views).forEach(key => {
+    const value = model.views[key];
+    const type = getActionType(value);
+    result.push(['@property', `{${type.type}}`, key]);
+  });
+
+  return `\n\n/**\n${result.map(line => `* ${line.join(' ')}`).join('\n')}\n*/`;
+}
+
+function getModelMethods(node) {
+  const walk = node => {
+    switch (node.type) {
+      case 'BlockStatement': {
+        return '*';
       }
-      case 'types.boolean': {
-        type = 'boolean';
-        break;
+      case 'ArrowFunctionExpression': {
+        return 'function';
       }
-      case 'types.Date': {
-        type = 'Date';
-        break;
-      }
-      case 'types.identifier': {
-        type = 'string';
-        break;
-      }
-      case 'types.null': {
-        type = 'null';
-        break;
-      }
-      case 'types.undefined': {
-        type = 'undefined';
-        break;
+      case 'CallExpression': {
+        if (node.callee.type === 'Identifier' && node.callee.name === 'flow') {
+          return 'Promise'
+        } else {
+          return 'function';
+        }
       }
       default: {
-        type = value;
+        console.error(`Method type is not found ${node.type}`, node);
       }
     }
-  }
-  return {type, isOptional};
-};
+  };
+  return walk(node);
+}
 
-(() => {
-  const code = fs.readFileSync(path.resolve('./model.js')).toString().trim();
-  const ast = parser.parse(code);
-
-  console.log(JSON.stringify(ast.program));
-
-  ast.program.body.forEach(node => {
-    parseModel(node);
-  });
-
-  let result = [];
-  if (RESULT.name) {
-    result.push(`@typedef {{}} ${RESULT.name}`);
-  }
-  Object.keys(RESULT.properties).forEach(key => {
-    const value = RESULT.properties[key];
-    let {type, isOptional} = getPropType(value);
-
-    if (type) {
-      type = `{${type}} `;
+function getModelPropertyValue(node) {
+  const walk = node => {
+    switch (node.type) {
+      case 'MemberExpression': {
+        let result = {
+          type: 'MemberExpression',
+          object: walk(node.object),
+          property: walk(node.property)
+        };
+        if (result.object === 'types') {
+          switch (result.property) {
+            case 'identifier': {
+              return 'string';
+            }
+            case 'identifierNumber': {
+              return 'number';
+            }
+            default: {
+              return result.property;
+            }
+          }
+        }
+        return result;
+      }
+      case 'Identifier': {
+        const model = idModelMap.get(node.name);
+        if (model) {
+          model.ref = true;
+          return model;
+        } else {
+          return node.name;
+        }
+      }
+      case 'CallExpression': {
+        const result = {
+          type: 'CallExpression',
+          callee: walk(node.callee),
+          arguments: node.arguments.map(walk),
+        };
+        switch (result.callee) {
+          case 'array': {
+            const type = result.arguments[0];
+            if (typeof type === 'string') {
+              return `${type}[]`;
+            }
+            break;
+          }
+          case 'map': {
+            const type = result.arguments[0];
+            if (typeof type === 'string') {
+              return `Map<*,${type}>`;
+            }
+            break;
+          }
+          case 'optional':
+          case 'maybeNull':
+          case 'maybe': {
+            const type = result.arguments[0];
+            return {
+              type: type,
+              optional: true
+            };
+          }
+          case 'enumeration':
+          case 'literal': {
+            return 'string';
+          }
+          case 'reference':
+            const type = result.arguments[0];
+            if (typeof type === 'string') {
+              return type;
+            }
+            break;
+          case 'compose':
+          case 'frozen':
+          case 'late':
+          case 'refinement':
+          case 'union': {
+            return '*';
+          }
+        }
+        return result;
+      }
+      case 'ObjectExpression': {
+        return {
+          type: 'ObjectExpression',
+          properties: node.properties.map(walk),
+        }
+      }
+      case 'ObjectProperty': {
+        return {
+          type: 'ObjectProperty',
+          key: walk(node.key),
+          value: walk(node.value)
+        };
+      }
+      case 'ArrowFunctionExpression': {
+        return {
+          type: 'function'
+        };
+      }
+      case 'StringLiteral': {
+        return {
+          type: 'string'
+        };
+      }
+      default: {
+        console.error(`Type is not found ${node.type}`, node);
+      }
     }
-    if (isOptional) {
-      key = `[${key}]`;
-    }
-    result.push(`@property ${type}${key}`);
-  });
-  Object.keys(RESULT.views).forEach(key => {
-    let type = getType(RESULT.views[key]);
-    result.push(`@property ${type}${key}`);
-  });
-  Object.keys(RESULT.actions).forEach(key => {
-    let type = getType(RESULT.actions[key]);
-    result.push(`@property ${type}${key}`);
-  });
+  };
+  return walk(node);
+}
 
-  console.log(`\n\n/**\n${result.map(line => `* ${line}`).join('\n')}\n*/`);
-})();
+function getModelStart(path) {
+  const goBack = path => {
+    let parent = path.parentPath;
+    if (parent.node.type === 'CallExpression') {
+      parent = parent.parentPath;
+      if (parent.node.type === 'MemberExpression') {
+        return goBack(parent);
+      } else {
+        return parent;
+      }
+    } else {
+      return parent;
+    }
+  };
+  return goBack(path);
+}
+
+function clean(ast) {
+  ast = JSON.parse(JSON.stringify(ast));
+
+  const walk = obj => {
+    if (Array.isArray(obj)) {
+      obj.forEach(item => walk(item));
+    } else
+    if (obj && typeof obj === 'object') {
+      if (typeof obj.loc === 'object') {
+        delete obj.loc;
+      }
+      if (typeof obj.start === 'number') {
+        delete obj.start;
+      }
+      if (typeof obj.end === 'number') {
+        delete obj.end;
+      }
+      Object.keys(obj).forEach(key => {
+        const item = obj[key];
+        if (typeof item === 'object') {
+          walk(obj[key]);
+        }
+      });
+    }
+  };
+  walk(ast);
+
+  return ast;
+}
