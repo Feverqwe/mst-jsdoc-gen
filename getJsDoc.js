@@ -5,7 +5,9 @@ const fs = require('fs');
 const path = require('path');
 
 const code = fs.readFileSync(path.resolve('./model.js')).toString().trim();
-const ast = parser.parse(code);
+const ast = parser.parse(code, {
+  allowImportExportEverywhere: true
+});
 
 let id = 0;
 
@@ -46,13 +48,11 @@ class ModelType {
       case 'maybeNull': {
         const result = this.childs[0].getProp();
         result.type = `${result.type}|undefined|null`;
-        result.optional = true;
         return result;
       }
       case 'maybe': {
         const result = this.childs[0].getProp();
         result.type = `${result.type}|undefined`;
-        result.optional = true;
         return result;
       }
       case 'optional': {
