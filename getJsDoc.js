@@ -11,7 +11,7 @@ const ast = parser.parse(code, {
 
 let id = 0;
 
-console.log('ast', JSON.stringify(clean(ast)));
+// console.log('ast', JSON.stringify(clean(ast)));
 
 const pathModelMap = new Map();
 const identifierModelMap = new Map();
@@ -114,16 +114,20 @@ const ModelVisitor = {
           case 'views': {
             const methods = state[property.name] = {};
             const fn = callExpression.get('arguments.0.body');
-            let returnNodeIndex = null;
-            fn.node.body.some((node, index) => {
-              if (node.type === 'ReturnStatement') {
-                returnNodeIndex = index;
-                return true;
+            if (fn.node.type === 'ObjectExpression') {
+              parseActions(fn, methods);
+            } else {
+              let returnNodeIndex = null;
+              fn.node.body.some((node, index) => {
+                if (node.type === 'ReturnStatement') {
+                  returnNodeIndex = index;
+                  return true;
+                }
+              });
+              const result = fn.get(`body.${returnNodeIndex}.argument`);
+              if (result) {
+                parseActions(result, methods);
               }
-            });
-            const result = fn.get(`body.${returnNodeIndex}.argument`);
-            if (result) {
-              parseActions(result, methods);
             }
             break;
           }
