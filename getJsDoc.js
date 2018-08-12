@@ -220,34 +220,21 @@ const parseActions = (result, state) => {
 
 traverse(ast, {
   MemberExpression(path) {
-    if (path.node.object.name === 'types' && path.node.property.name === 'model') {
+    if (
+      path.node.object.name === 'types' &&
+      ['model', 'compose'].includes(path.node.property.name)
+    ) {
       const modelStartPath = getModelStart(path);
       if (modelStartPath) {
         if (!pathModelMap.has(modelStartPath)) {
-          let modelPath = modelStartPath;
-          if (modelPath) {
-            const model = new Model();
-            const cloneNode = modelPath.node;
-            modelPath.replaceWith(types.identifier(model.identifier));
-            modelPath.node = cloneNode;
-            pathModelMap.set(modelPath, model);
-            identifierModelMap.set(model.identifier, model);
-          } else {
-            console.error('Parent model not is not supported', modelStartPath.node);
-          }
+          const modelPath = modelStartPath;
+          const model = new Model();
+          const cloneNode = modelPath.node;
+          modelPath.replaceWith(types.identifier(model.identifier));
+          modelPath.node = cloneNode;
+          pathModelMap.set(modelPath, model);
+          identifierModelMap.set(model.identifier, model);
         }
-      }
-    } else
-    if (path.node.object.name === 'types' && path.node.property.name === 'compose') {
-      const modelStartPath = getModelStart(path);
-      if (modelStartPath) {
-        const modelPath = modelStartPath;
-        const model = new Model();
-        const cloneNode = modelPath.node;
-        modelPath.replaceWith(types.identifier(model.identifier));
-        modelPath.node = cloneNode;
-        pathModelMap.set(modelPath, model);
-        identifierModelMap.set(model.identifier, model);
       }
     }
   }
