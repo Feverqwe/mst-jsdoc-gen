@@ -12,17 +12,17 @@ let id = 0;
 console.log('ast', JSON.stringify(clean(ast)));
 
 const pathModelMap = new Map();
-const idModelMap = new Map();
+const identifierModelMap = new Map();
 
 class Model {
   constructor() {
     this.id = ++id;
+    this.identifier = `Model#${this.id}`;
   }
 }
 
 const ModelVisitor = {
   CallExpression(path, state) {
-    const args = path.node.arguments;
     const callee = path.node.callee;
     const property = callee.property;
     if (callee.type === 'MemberExpression' && property.type === 'Identifier') {
@@ -30,28 +30,11 @@ const ModelVisitor = {
         case 'model': {
           let modelProps = path.get('arguments.0');
           if (modelProps.node.type === 'StringLiteral') {
-            state.name = args[0].value;
+            state.name = modelProps.node.value;
             modelProps = path.get('arguments.1');
           }
           const properties = state.properties = {};
-          if (modelProps.node.type === 'ObjectExpression') {
-            modelProps.node.properties.forEach((propNode, index) => {
-              const propPath = modelProps.get(`properties.${index}`);
-              if (propPath.node.type === 'ObjectProperty') {
-                const keyNode = propPath.node.key;
-                const valueNode = propPath.node.value;
-                if (keyNode.type === 'Identifier') {
-                  properties[keyNode.name] = getModelPropertyValue(valueNode);
-                } else {
-                  console.error('Unknown model property key', keyNode);
-                }
-              } else {
-                console.error('Unknown model property type', propPath.node);
-              }
-            });
-          } else {
-            console.error('Unknown model argument', modelProps.node);
-          }
+          parseModel(modelProps, properties);
           break;
         }
         case 'actions':
@@ -67,7 +50,7 @@ const ModelVisitor = {
           });
           const result = fn.get(`body.${returnNodeIndex}.argument`);
           if (result) {
-            getActions(result, methods);
+            parseActions(result, methods);
           }
           break;
         }
@@ -76,7 +59,28 @@ const ModelVisitor = {
   }
 };
 
-const getActions = (result, state) => {
+const parseModel = (modelProps, properties) => {
+  if (modelProps.node.type === 'ObjectExpression') {
+    modelProps.node.properties.forEach((propNode, index) => {
+      const propPath = modelProps.get(`properties.${index}`);
+      if (propPath.node.type === 'ObjectProperty') {
+        const keyNode = propPath.node.key;
+        const valueNode = propPath.node.value;
+        if (keyNode.type === 'Identifier') {
+          properties[keyNode.name] = getModelPropertyValue(valueNode);
+        } else {
+          console.error('parseModel error: Unknown ObjectProperty key', keyNode);
+        }
+      } else {
+        console.error('parseModel error: Unknown ObjectExpression property', propPath.node);
+      }
+    });
+  } else {
+    console.error('parseModel error: Unknown argument', modelProps.node);
+  }
+};
+
+const parseActions = (result, state) => {
   if (result.node.type === 'ObjectExpression') {
     result.node.properties.forEach((propNode, index) => {
       const propPath = result.get(`properties.${index}`);
@@ -86,7 +90,7 @@ const getActions = (result, state) => {
         if (keyNode.type === 'Identifier') {
           state[keyNode.name] = getModelMethods(valueNode);
         } else {
-          console.error('Unknown action property key', keyNode);
+          console.error('parseActions error: Unknown ObjectProperty key', keyNode);
         }
       } else
       if (propPath.node.type === 'ObjectMethod') {
@@ -99,14 +103,14 @@ const getActions = (result, state) => {
             state[keyNode.name] = '*';
           }
         } else {
-          console.error('Unknown action property key', keyNode);
+          console.error('parseActions error: Unknown ObjectMethod key', keyNode);
         }
       } else {
-        console.error('Unknown action property type', propPath.node);
+        console.error('parseActions error: Unknown ObjectExpression property', propPath.node);
       }
     });
   } else {
-    console.error('Unknown action argument', result.node);
+    console.error('parseActions error: unknown return argument', result.node);
   }
 };
 
@@ -128,15 +132,14 @@ traverse(ast, {
             };
           }
           if (modelPath) {
-            let model = new Model();
-            const id = `Model#${model.id}`;
-            const clone = modelPath.node;
-            modelPath.replaceWith(replaceTo(types.identifier(id)));
-            modelPath.node = clone;
+            const model = new Model();
+            const cloneNode = modelPath.node;
+            modelPath.replaceWith(replaceTo(types.identifier(model.identifier)));
+            modelPath.node = cloneNode;
             pathModelMap.set(modelPath, model);
-            idModelMap.set(id, model);
+            identifierModelMap.set(model.identifier, model);
           } else {
-            console.error('Model path not found', modelStartPath.node);
+            console.error('Parent model not is not supported', modelStartPath.node);
           }
         }
       }
@@ -158,7 +161,7 @@ Array.from(pathModelMap.values()).forEach(model => {
 function getModelJsDoc(model) {
   const result = [];
 
-  result.push(['@typedef', '{{}}', model.name || `Model#${model.id}`]);
+  result.push(['@typedef', '{{}}', model.name || model.identifier]);
 
   const getFloatModelProps = model => {
     if (model.name) {
@@ -241,7 +244,7 @@ function getModelMethods(node) {
         }
       }
       default: {
-        console.error(`Method type is not found ${node.type}`, node);
+        console.error(`getModelMethods error: Node is not supported ${node.type}`, node);
       }
     }
   };
@@ -273,7 +276,7 @@ function getModelPropertyValue(node) {
         return result;
       }
       case 'Identifier': {
-        const model = idModelMap.get(node.name);
+        const model = identifierModelMap.get(node.name);
         if (model) {
           model.ref = true;
           return model;
@@ -374,7 +377,7 @@ function getModelPropertyValue(node) {
         return 'number';
       }
       default: {
-        console.error(`Type is not found ${node.type}`, node);
+        console.error(`getModelPropertyValue error: Node is not supported ${node.type}`, node);
       }
     }
   };
