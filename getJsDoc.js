@@ -21,6 +21,73 @@ class Model {
   }
 }
 
+class ModelType {
+  constructor(type) {
+    this.type = type;
+    this.model = null;
+    this.optional = null;
+    this.childs = [];
+  }
+  insert(type) {
+    this.childs.push(type);
+  }
+  getProp() {
+    switch (this.type) {
+      case 'map': {
+        const result = this.childs[0].getProp();
+        result.type = `Map<*,${result.type}>`;
+        return result;
+      }
+      case 'array': {
+        const result = this.childs[0].getProp();
+        result.type = `${result.type}[]`;
+        return result;
+      }
+      case 'maybeNull': {
+        const result = this.childs[0].getProp();
+        result.type = `${result.type}|undefined|null`;
+        result.optional = true;
+        return result;
+      }
+      case 'maybe': {
+        const result = this.childs[0].getProp();
+        result.type = `${result.type}|undefined`;
+        result.optional = true;
+        return result;
+      }
+      case 'optional': {
+        const result = this.childs[0].getProp();
+        result.optional = true;
+        return result;
+      }
+      case 'model': {
+        return getFloatModelProps(this.model);
+      }
+      case 'compose':
+      case 'late':
+      case 'refinement':
+      case 'union':
+      case 'frozen':
+      case 'reference':
+      case 'enumeration':
+      case 'literal': {
+        return this.childs[0].getProp();
+      }
+      default: {
+        switch (this.type) {
+          case 'identifier': {
+            return {type: 'string'}
+          }
+          case 'identifierNumber': {
+            return {type: 'number'}
+          }
+        }
+        return {type: this.type};
+      }
+    }
+  }
+}
+
 const ModelVisitor = {
   CallExpression(path, state) {
     const callee = path.node.callee;
@@ -193,17 +260,11 @@ function getActionProp(key, prop) {
   return {type: prop};
 }
 
-function getModelProp(key, value) {
-  if (typeof value === 'string') {
-    value = {type: value};
+function getModelProp(key, type) {
+  if (typeof type === 'string') {
+    type = new ModelType(type);
   }
-  if (value instanceof Model) {
-    value = getFloatModelProps(value);
-  }
-  if (!value.type) {
-    console.error('Unknown type', value);
-  }
-  return value;
+  return type.getProp();
 }
 
 function getFloatModelProps(model) {
@@ -258,94 +319,77 @@ function getModelPropertyValue(node) {
   const walk = node => {
     switch (node.type) {
       case 'MemberExpression': {
-        let result = {
-          type: 'MemberExpression',
-          object: walk(node.object),
-          property: walk(node.property)
-        };
-        if (result.object === 'types') {
-          switch (result.property) {
-            case 'identifier': {
-              return 'string';
-            }
-            case 'identifierNumber': {
-              return 'number';
-            }
-            default: {
-              return result.property;
-            }
-          }
+        if (node.object.type === 'Identifier' && node.object.name === 'types') {
+          return walk(node.property);
+        } else {
+          return {
+            type: 'MemberExpression',
+            object: walk(node.object),
+            property: walk(node.property)
+          };
         }
-        return result;
       }
       case 'Identifier': {
         const model = identifierModelMap.get(node.name);
         if (model) {
           model.ref = true;
-          return model;
+          const type = new ModelType('model');
+          type.model = model;
+          return type;
         } else {
-          return node.name;
+          return new ModelType(node.name);
         }
       }
       case 'CallExpression': {
-        const result = {
-          type: 'CallExpression',
-          callee: walk(node.callee),
-          arguments: node.arguments.map(walk),
-        };
-        switch (result.callee) {
-          case 'array': {
-            const type = result.arguments[0];
-            if (typeof type === 'string') {
-              return `${type}[]`;
-            }
-            break;
-          }
-          case 'map': {
-            const type = result.arguments[0];
-            if (typeof type === 'string') {
-              return `Map<*,${type}>`;
-            }
-            break;
-          }
-          case 'optional':
-            return result.arguments[0];
-          case 'maybeNull':
-          case 'maybe': {
-            const type = result.arguments[0];
-            if (typeof type === 'string') {
-              return {
-                type: type,
-                optional: true
-              };
-            } else {
-              type.optional = true;
+        const type = walk(node.callee);
+        if (type instanceof ModelType) {
+          switch (type.type) {
+            case 'array': {
+              const argType = walk(node.arguments[0]);
+              type.insert(argType);
               return type;
             }
-          }
-          case 'enumeration':
-          case 'literal': {
-            return 'string';
-          }
-          case 'reference':
-            const type = result.arguments[0];
-            if (typeof type === 'string') {
+            case 'map': {
+              const argType = walk(node.arguments[0]);
+              type.insert(argType);
               return type;
             }
-            break;
-          case 'frozen':
-            return {
-              type: '*',
-              optional: true
-            };
-          case 'compose':
-          case 'late':
-          case 'refinement':
-          case 'union': {
-            return '*';
+            case 'optional':
+              type.insert(walk(node.arguments[0]));
+              return type;
+            case 'maybeNull':
+            case 'maybe': {
+              type.insert(walk(node.arguments[0]));
+              return type;
+            }
+            case 'enumeration':
+            case 'literal': {
+              type.insert(new ModelType('string'));
+              return type;
+            }
+            case 'reference':
+              type.insert(walk(node.arguments[0]));
+              return type;
+            case 'frozen':
+              const argType = new ModelType('*');
+              argType.optional = true;
+              type.insert(argType);
+              return type;
+            case 'compose':
+            case 'late':
+            case 'refinement':
+            case 'union': {
+              const argType = new ModelType('*');
+              type.insert(argType);
+              return type;
+            }
           }
         }
-        return result;
+        return {
+          type: 'CallExpression',
+          callee: type,
+          arguments: node.arguments.map(walk),
+        };
       }
       case 'ObjectExpression': {
         return {
@@ -361,23 +405,19 @@ function getModelPropertyValue(node) {
         };
       }
       case 'ArrowFunctionExpression': {
-        return {
-          type: 'function'
-        };
+        return new ModelType('function');
       }
       case 'StringLiteral': {
-        return {
-          type: 'string'
-        };
+        return new ModelType('string');
       }
       case 'ArrayExpression': {
-        return '[]';
+        return new ModelType('[]');
       }
       case 'BooleanLiteral': {
-        return 'boolean';
+        return new ModelType('boolean');
       }
       case 'NumericLiteral': {
-        return 'number';
+        return new ModelType('number');
       }
       default: {
         console.error(`getModelPropertyValue error: Node is not supported ${node.type}`, node);
