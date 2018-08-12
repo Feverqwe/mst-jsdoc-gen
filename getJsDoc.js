@@ -19,7 +19,12 @@ const identifierModelMap = new Map();
 class Model {
   constructor() {
     this.id = ++id;
+    this.name = null;
     this.identifier = `Model#${this.id}`;
+    this.inheret = [];
+    this.properties = {};
+    this.actions = {};
+    this.views = {};
   }
 }
 
@@ -89,37 +94,69 @@ class ModelType {
 }
 
 const ModelVisitor = {
-  CallExpression(path, state) {
-    const callee = path.node.callee;
-    const property = callee.property;
-    if (callee.type === 'MemberExpression' && property.type === 'Identifier') {
-      switch (property.name) {
-        case 'model': {
-          let modelProps = path.get('arguments.0');
-          if (modelProps.node.type === 'StringLiteral') {
-            state.name = modelProps.node.value;
-            modelProps = path.get('arguments.1');
-          }
-          const properties = state.properties = {};
-          parseModel(modelProps, properties);
-          break;
-        }
-        case 'actions':
-        case 'views': {
-          const methods = state[property.name] = {};
-          const fn = path.get('arguments.0.body');
-          let returnNodeIndex = null;
-          fn.node.body.some((node, index) => {
-            if (node.type === 'ReturnStatement') {
-              returnNodeIndex = index;
-              return true;
+  MemberExpression(mePath, state) {
+    const callExpression = mePath.parentPath;
+    if (callExpression.node.type === 'CallExpression' && callExpression.node.callee === mePath.node) {
+      const property = mePath.node.property;
+      if (property.type === 'Identifier') {
+        switch (property.name) {
+          case 'model': {
+            let modelProps = callExpression.get('arguments.0');
+            if (modelProps.node.type === 'StringLiteral') {
+              state.name = modelProps.node.value;
+              modelProps = callExpression.get('arguments.1');
             }
-          });
-          const result = fn.get(`body.${returnNodeIndex}.argument`);
-          if (result) {
-            parseActions(result, methods);
+            const properties = state.properties = {};
+            parseModel(modelProps, properties);
+            break;
           }
-          break;
+          case 'actions':
+          case 'views': {
+            const methods = state[property.name] = {};
+            const fn = callExpression.get('arguments.0.body');
+            let returnNodeIndex = null;
+            fn.node.body.some((node, index) => {
+              if (node.type === 'ReturnStatement') {
+                returnNodeIndex = index;
+                return true;
+              }
+            });
+            const result = fn.get(`body.${returnNodeIndex}.argument`);
+            if (result) {
+              parseActions(result, methods);
+            }
+            break;
+          }
+          case 'compose': {
+            let firstModelIndex = 0;
+            let modelProps = callExpression.get('arguments.0');
+            if (modelProps.node.type === 'StringLiteral') {
+              state.name = modelProps.node.value;
+              firstModelIndex++;
+            }
+            callExpression.node.arguments.forEach((node, index) => {
+              if (index >= firstModelIndex) {
+                const arg = callExpression.get(`arguments.${index}`);
+                if (arg.node.type === 'Identifier') {
+                  const model = identifierModelMap.get(arg.node.name);
+                  if (model) {
+                    model.ref = true;
+                    state.inheret.push(model);
+                  } else {
+                    state.inheret.push(arg.node.name);
+                  }
+                }
+              }
+            });
+            break;
+          }
+          case 'named': {
+            let namePath = callExpression.get('arguments.0');
+            if (namePath.node.type === 'StringLiteral') {
+              state.name = namePath.node.value;
+            }
+            break;
+          }
         }
       }
     }
@@ -187,21 +224,11 @@ traverse(ast, {
       const modelStartPath = getModelStart(path);
       if (modelStartPath) {
         if (!pathModelMap.has(modelStartPath)) {
-          let modelPath = null;
-          let replaceTo = identifier => identifier;
-          if (['VariableDeclarator', 'ExpressionStatement', 'CallExpression'].includes(modelStartPath.node.type)) {
-            modelPath = modelStartPath;
-          } else
-          if (modelStartPath.node.type === 'ObjectProperty') {
-            modelPath = modelStartPath;
-            replaceTo = identifier => {
-              return types.objectProperty(modelPath.node.key, identifier);
-            };
-          }
+          let modelPath = modelStartPath;
           if (modelPath) {
             const model = new Model();
             const cloneNode = modelPath.node;
-            modelPath.replaceWith(replaceTo(types.identifier(model.identifier)));
+            modelPath.replaceWith(types.identifier(model.identifier));
             modelPath.node = cloneNode;
             pathModelMap.set(modelPath, model);
             identifierModelMap.set(model.identifier, model);
@@ -210,11 +237,23 @@ traverse(ast, {
           }
         }
       }
+    } else
+    if (path.node.object.name === 'types' && path.node.property.name === 'compose') {
+      const modelStartPath = getModelStart(path);
+      if (modelStartPath) {
+        const modelPath = modelStartPath;
+        const model = new Model();
+        const cloneNode = modelPath.node;
+        modelPath.replaceWith(types.identifier(model.identifier));
+        modelPath.node = cloneNode;
+        pathModelMap.set(modelPath, model);
+        identifierModelMap.set(model.identifier, model);
+      }
     }
   }
 });
 
-Array.from(pathModelMap.keys()).forEach(path => {
+Array.from(pathModelMap.keys()).forEach((path, index) => {
   const model = pathModelMap.get(path);
   path.traverse(ModelVisitor, model);
 });
@@ -228,9 +267,19 @@ Array.from(pathModelMap.values()).forEach(model => {
 function getModelJsDoc(model) {
   const result = [];
 
-  result.push(['@typedef', '{{}}', model.name || model.identifier]);
+  let parentModelStr = '{}';
+  model.inheret.forEach(inheritModel => {
+    if (typeof inheritModel === 'string') {
+      parentModelStr = inheritModel;
+    } else {
+      model.properties = Object.assign({}, model.properties, inheritModel.properties);
+      model.actions = Object.assign({}, model.actions, inheritModel.actions);
+      model.views = Object.assign({}, model.views, inheritModel.views);
+    }
+  });
+  result.push(['@typedef', `{${parentModelStr}}`, model.name || model.identifier]);
 
-  model.properties && Object.entries(model.properties).forEach(([key, value]) => {
+  Object.entries(model.properties).forEach(([key, value]) => {
     const prop = getModelProp(key, value);
     let name = key;
     if (prop.optional) {
@@ -238,17 +287,14 @@ function getModelJsDoc(model) {
     }
     result.push(['@property', `{${prop.type}}`, name]);
   });
-  model.actions && Object.entries(model.actions).forEach(([key, value]) => {
+  Object.entries(model.actions).forEach(([key, value]) => {
     const prop = getActionProp(key, value);
     result.push(['@property', `{${prop.type}}`, key]);
   });
-  model.views && Object.entries(model.views).forEach(([key, value]) => {
+  Object.entries(model.views).forEach(([key, value]) => {
     const prop = getActionProp(key, value);
     result.push(['@property', `{${prop.type}}`, key]);
   });
-
-  /**@type {{[a]:string}}*/
-  const f = {};
 
   return `\n\n/**\n${result.map(line => `* ${line.join(' ')}`).join('\n')}\n*/`;
 }
@@ -272,7 +318,7 @@ function getFloatModelProps(model) {
     return {type: model.name};
   }
   const result = [];
-  model.properties && Object.entries(model.properties).forEach(([key, value]) => {
+  Object.entries(model.properties).forEach(([key, value]) => {
     const prop = getModelProp(key, value);
     let name = key;
     if (prop.optional) {
@@ -280,11 +326,11 @@ function getFloatModelProps(model) {
     }
     result.push([name, prop.type]);
   });
-  model.actions && Object.entries(model.actions).forEach(([key, value]) => {
+  Object.entries(model.actions).forEach(([key, value]) => {
     const prop = getActionProp(key, value);
     result.push([key, prop.type]);
   });
-  model.views && Object.entries(model.views).forEach(([key, value]) => {
+  Object.entries(model.views).forEach(([key, value]) => {
     const prop = getActionProp(key, value);
     result.push([key, prop.type]);
   });
@@ -431,14 +477,14 @@ function getModelStart(path) {
   const goBack = path => {
     let parent = path.parentPath;
     if (parent.node.type === 'CallExpression') {
-      parent = parent.parentPath;
-      if (parent.node.type === 'MemberExpression') {
-        return goBack(parent);
+      let subParent = parent.parentPath;
+      if (subParent.node.type === 'MemberExpression') {
+        return goBack(subParent);
       } else {
         return parent;
       }
     } else {
-      return parent;
+      return path;
     }
   };
   return goBack(path);
