@@ -163,68 +163,71 @@ function getModelJsDoc(model) {
 
   result.push(['@typedef', '{{}}', model.name || model.identifier]);
 
-  const getFloatModelProps = model => {
-    if (model.name) {
-      return {type: model.name};
-    }
-    const result = [];
-    model.properties && Object.keys(model.properties).forEach(key => {
-      let value = model.properties[key];
-      const type = getPropType(value);
-      result.push([key, type.type]);
-    });
-    model.actions && Object.keys(model.actions).forEach(key => {
-      const value = model.actions[key];
-      const type = getActionType(value);
-      result.push([key, type.type]);
-    });
-    model.views && Object.keys(model.views).forEach(key => {
-      const value = model.views[key];
-      const type = getActionType(value);
-      result.push([key, type.type]);
-    });
-    return {type: `{${result.map(item => item.join(':')).join(',')}}`}
-  };
-  const getActionType = value => {
-    if (!value) {
-      console.error('Unknown action', key, value);
-    }
-    return {type: value};
-  };
-  const getPropType = value => {
-    if (typeof value === 'string') {
-      value = {type: value};
-    }
-    if (value instanceof Model) {
-      value = getFloatModelProps(value);
-    }
-    if (!value.type) {
-      console.error('Unknown type', value);
-    }
-    return value;
-  };
-  model.properties && Object.keys(model.properties).forEach(key => {
-    let value = model.properties[key];
-    const type = getPropType(value);
+  model.properties && Object.entries(model.properties).forEach(([key, value]) => {
+    const prop = getModelProp(key, value);
     let name = key;
-    if (type.optional) {
+    if (prop.optional) {
       name = `[${name}]`;
     }
-    result.push(['@property', `{${type.type}}`, name]);
+    result.push(['@property', `{${prop.type}}`, name]);
+  });
+  model.actions && Object.entries(model.actions).forEach(([key, value]) => {
+    const prop = getActionProp(key, value);
+    result.push(['@property', `{${prop.type}}`, key]);
+  });
+  model.views && Object.entries(model.views).forEach(([key, value]) => {
+    const prop = getActionProp(key, value);
+    result.push(['@property', `{${prop.type}}`, key]);
   });
 
-  model.actions && Object.keys(model.actions).forEach(key => {
-    const value = model.actions[key];
-    const type = getActionType(value);
-    result.push(['@property', `{${type.type}}`, key]);
-  });
-  model.views && Object.keys(model.views).forEach(key => {
-    const value = model.views[key];
-    const type = getActionType(value);
-    result.push(['@property', `{${type.type}}`, key]);
-  });
+  /**@type {{[a]:string}}*/
+  const f = {};
 
   return `\n\n/**\n${result.map(line => `* ${line.join(' ')}`).join('\n')}\n*/`;
+}
+
+function getActionProp(key, prop) {
+  if (!prop) {
+    console.error('Unknown action', key, prop);
+  }
+  return {type: prop};
+}
+
+function getModelProp(key, value) {
+  if (typeof value === 'string') {
+    value = {type: value};
+  }
+  if (value instanceof Model) {
+    value = getFloatModelProps(value);
+  }
+  if (!value.type) {
+    console.error('Unknown type', value);
+  }
+  return value;
+}
+
+function getFloatModelProps(model) {
+  if (model.name) {
+    return {type: model.name};
+  }
+  const result = [];
+  model.properties && Object.entries(model.properties).forEach(([key, value]) => {
+    const prop = getModelProp(key, value);
+    let name = key;
+    if (prop.optional) {
+      name = `[${name}]`;
+    }
+    result.push([name, prop.type]);
+  });
+  model.actions && Object.entries(model.actions).forEach(([key, value]) => {
+    const prop = getActionProp(key, value);
+    result.push([key, prop.type]);
+  });
+  model.views && Object.entries(model.views).forEach(([key, value]) => {
+    const prop = getActionProp(key, value);
+    result.push([key, prop.type]);
+  });
+  return {type: `{${result.map(item => item.join(':')).join(',')}}`}
 }
 
 function getModelMethods(node) {
