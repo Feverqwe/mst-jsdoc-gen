@@ -68,7 +68,6 @@ class ModelType {
       case 'model': {
         return getFloatModelProps(this.model);
       }
-      case 'compose':
       case 'late':
       case 'refinement':
       case 'union':
@@ -433,9 +432,15 @@ function getModelPropertyValue(node) {
               type.insert(argType);
               return type;
             }
-            case 'compose':
+            case 'refinement': {
+              let subType = node.arguments[0];
+              if (subType.type === 'StringLiteral') {
+                subType = node.arguments[1];
+              }
+              type.insert(walk(subType));
+              return type;
+            }
             case 'late':
-            case 'refinement':
             case 'union': {
               const argType = new ModelType('*');
               type.insert(argType);
