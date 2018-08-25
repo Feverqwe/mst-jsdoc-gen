@@ -73,6 +73,7 @@ class ModelType {
       case 'refinement':
       case 'union':
       case 'frozen':
+      case 'custom':
       case 'reference':
       case 'enumeration':
       case 'literal': {
@@ -391,9 +392,10 @@ function getModelPropertyValue(node) {
               type.insert(argType);
               return type;
             }
-            case 'optional':
+            case 'optional': {
               type.insert(walk(node.arguments[0]));
               return type;
+            }
             case 'maybeNull':
             case 'maybe': {
               type.insert(walk(node.arguments[0]));
@@ -404,14 +406,33 @@ function getModelPropertyValue(node) {
               type.insert(new ModelType('string'));
               return type;
             }
-            case 'reference':
+            case 'reference': {
               type.insert(walk(node.arguments[0]));
               return type;
-            case 'frozen':
+            }
+            case 'frozen': {
               const argType = new ModelType('*');
               argType.optional = true;
               type.insert(argType);
               return type;
+            }
+            case 'custom': {
+              const objectExpression = node.arguments[0];
+              let name = null;
+              if (objectExpression.type === 'ObjectExpression') {
+                objectExpression.properties.some(objectProperty => {
+                  if (objectProperty.key.type === 'Identifier' && objectProperty.key.name === 'name') {
+                    if (objectProperty.value.type === 'StringLiteral') {
+                      name = objectProperty.value.value;
+                      return true;
+                    }
+                  }
+                })
+              }
+              const argType = new ModelType(name || '*');
+              type.insert(argType);
+              return type;
+            }
             case 'compose':
             case 'late':
             case 'refinement':
