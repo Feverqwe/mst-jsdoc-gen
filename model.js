@@ -1,34 +1,42 @@
-types.model('ExampleModel', {
-  id: types.identifier,
-  idNumber: types.identifierNumber,
-  str: types.string,
-  num: types.number,
-  int: types.integer,
-  bool: types.boolean,
-  date: types.Date,
-  someModel: types.model('TestModel', {
+const ExampleStore = types.model('Example', {
+  identifierType: types.identifier,
+  identifierNumberType: types.identifierNumber,
+  stringType: types.string,
+  numberType: types.number,
+  integerType: types.integer,
+  booleanType: types.boolean,
+  dateType: types.Date,
+  modelNamedType: types.model('SomeModelName', {
     name: types.string,
   }),
-  someNonameModel: types.model({
+  modelType: types.model({
     name: types.string,
   }),
-  someArray: types.array(types.string),
-  someMap: types.map(ItemsMap),
-  union: types.union({
+  arrayOfStringType: types.array(types.string),
+  mapType: types.map(ItemsMap),
+  unionType: types.union({
     dispatcher: () => {}
   }, A, B, C),
-  literal: types.literal('a'),
-  enumeration: types.enumeration('Name', 'a', 'b', 'c'),
-  refinement: types.refinement('Name', types.string, value => value.length > 5),
-  maybeString: types.maybe(types.string),
-  maybeNullString: types.maybeNull(types.string),
-  optionalString: types.optional(types.string),
-  null: types.null,
-  undefined: types.undefined,
-  late: types.late(() => {}),
-  frozen: types.frozen(),
-  compose: types.compose('Compose', A, B),
-  reference: types.reference(SomeModel),
+  literalType: types.literal('a'),
+  enumerationNamedType: types.enumeration('SomeEnumerationName', 'a', 'b', 'c'),
+  enumerationType: types.enumeration('a', 'b', 'c'),
+  refinementWithNameType: types.refinement('SomeRefinementName', types.string, value => value.length > 5),
+  refinementType: types.refinement(types.string, value => value.length > 5),
+  maybeStringType: types.maybe(types.string),
+  maybeNullStringType: types.maybeNull(types.string),
+  optionalStringType: types.optional(types.string),
+  nullType: types.null,
+  undefinedType: types.undefined,
+  lateNamedType: types.late('SomeLateName', () => {}),
+  lateType: types.late(() => {}),
+  frozenType: types.frozen(),
+  composeNamedType: types.compose('SomeComposeName', A, B),
+  composeType: types.compose(C, D),
+  referenceType: types.reference(SomeReference),
+  customNamedType: types.custom({
+    name: "Decimal"
+  }),
+  customType: types.custom({}),
 }).actions(self => {
   return {
     get x() {
@@ -58,3 +66,5 @@ types.model('ExampleModel', {
     }
   };
 });
+
+export default ExampleStore;
