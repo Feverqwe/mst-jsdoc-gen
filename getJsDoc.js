@@ -258,7 +258,7 @@ Array.from(pathModelMap.values()).forEach(model => {
 function getModelJsDoc(model) {
   const result = [];
 
-  let parentModelStr = '{}';
+  let parentModelStr = 'Object';
   model.inheret.forEach(inheritModel => {
     if (typeof inheritModel === 'string') {
       parentModelStr = inheritModel;
@@ -474,7 +474,7 @@ function getModelPropertyValue(node) {
         return new ModelType('string');
       }
       case 'ArrayExpression': {
-        return new ModelType('[]');
+        return new ModelType('Array');
       }
       case 'BooleanLiteral': {
         return new ModelType('boolean');
