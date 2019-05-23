@@ -74,6 +74,7 @@ class ModelType {
       case 'frozen':
       case 'custom':
       case 'reference':
+      case 'safeReference':
       case 'enumeration':
       case 'literal': {
         return this.childs[0].getProp();
@@ -405,6 +406,7 @@ function getModelPropertyValue(node) {
               type.insert(new ModelType('string'));
               return type;
             }
+            case 'safeReference':
             case 'reference': {
               type.insert(walk(node.arguments[0]));
               return type;
