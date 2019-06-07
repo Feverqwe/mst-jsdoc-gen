@@ -79,11 +79,21 @@ class ModelType {
       case 'literal': {
         return this.childs[0].getProp();
       }
+      case 'Date': {
+        return {type: 'Date'};
+      }
+      case 'null': {
+        return {type: 'null'};
+      }
+      case 'undefined': {
+        return {type: 'undefined'};
+      }
       default: {
         switch (this.type) {
           case 'identifier': {
             return {type: 'string'}
           }
+          case 'integer':
           case 'identifierNumber': {
             return {type: 'number'}
           }
