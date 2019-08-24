@@ -9,7 +9,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@babel/core": "^7.5.5",
     "@babel/parser": "^7.0.0-beta.56",
+    "@babel/preset-typescript": "^7.3.3",
     "@babel/traverse": "^7.0.0-rc.1",
     "@babel/types": "^7.0.0-rc.1"
   }

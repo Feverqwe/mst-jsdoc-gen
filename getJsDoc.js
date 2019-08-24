@@ -1,13 +1,24 @@
+const babel = require("@babel/core");
 const traverse = require('@babel/traverse').default;
-const parser = require('@babel/parser');
 const types = require('@babel/types');
 const fs = require('fs');
 const path = require('path');
 
-const code = fs.readFileSync(path.resolve('./model.js')).toString().trim();
-const ast = parser.parse(code, {
-  allowImportExportEverywhere: true
-});
+let code = fs.readFileSync(path.resolve('./model.js')).toString().trim();
+
+const ast = babel.transformSync(code, {
+  ast: true,
+  code: false,
+  babelrc: false,
+  presets: [
+    ["@babel/preset-typescript", {
+      allExtensions: true
+    }]
+  ],
+  parserOpts: {
+    allowImportExportEverywhere: true
+  }
+}).ast;
 
 let id = 0;
 
