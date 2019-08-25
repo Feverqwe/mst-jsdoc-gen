@@ -134,7 +134,7 @@ const ModelVisitor = {
           }
           case 'actions':
           case 'views': {
-            const methods = state[property.name] = {};
+            const methods = state[property.name] = state[property.name] || {};
             const fn = callExpression.get('arguments.0.body');
             if (fn.node.type === 'ObjectExpression') {
               parseActions(fn, methods);
