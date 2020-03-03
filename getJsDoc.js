@@ -34,6 +34,7 @@ class Model {
     this.identifier = `Model#${this.id}`;
     this.inheret = [];
     this.properties = {};
+    this.volatile = {};
     this.actions = {};
     this.views = {};
   }
@@ -132,6 +133,7 @@ const ModelVisitor = {
             parseModel(modelProps, properties);
             break;
           }
+          case 'volatile':
           case 'actions':
           case 'views': {
             const methods = state[property.name] = state[property.name] || {};
@@ -288,6 +290,7 @@ function getModelJsDoc(model) {
       model.properties = Object.assign({}, model.properties, inheritModel.properties);
       model.actions = Object.assign({}, model.actions, inheritModel.actions);
       model.views = Object.assign({}, model.views, inheritModel.views);
+      model.volatile = Object.assign({}, model.volatile, inheritModel.volatile);
     }
   });
   result.push(['@typedef', `{${parentModelStr}}`, model.name || model.identifier]);
@@ -299,6 +302,10 @@ function getModelJsDoc(model) {
       name = `[${name}]`;
     }
     result.push(['@property', `{${prop.type}}`, name]);
+  });
+  Object.entries(model.volatile).forEach(([key, value]) => {
+    const prop = getActionProp(key, value);
+    result.push(['@property', `{${prop.type}}`, key]);
   });
   Object.entries(model.actions).forEach(([key, value]) => {
     const prop = getActionProp(key, value);
@@ -338,6 +345,10 @@ function getFloatModelProps(model) {
       name = `[${name}]`;
     }
     result.push([name, prop.type]);
+  });
+  Object.entries(model.volatile).forEach(([key, value]) => {
+    const prop = getActionProp(key, value);
+    result.push([key, prop.type]);
   });
   Object.entries(model.actions).forEach(([key, value]) => {
     const prop = getActionProp(key, value);
