@@ -377,6 +377,19 @@ function getModelMethods(node) {
           return 'function';
         }
       }
+      case 'ArrayExpression': {
+        return 'Array';
+      }
+      case 'Identifier': {
+        return '*';
+      }
+      case 'NewExpression': {
+        if (node.callee.type === 'Identifier' && node.callee.name === 'Map') {
+          return 'Map'
+        } else {
+          return '*';
+        }
+      }
       default: {
         console.error(`getModelMethods error: Node is not supported ${node.type}`, node);
       }
