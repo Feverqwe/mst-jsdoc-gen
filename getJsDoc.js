@@ -230,11 +230,11 @@ const parseActions = (result, state) => {
         const keyNode = propPath.node.key;
         const bodyNode = propPath.node.body;
         if (keyNode.type === 'Identifier') {
-          const jsDoc = findJSDoc(propPath.node, '*');
+          const jsDoc = findJSDoc(propPath.node);
           if (propPath.node.kind === 'method') {
             state[keyNode.name] = getJsDocFunction(jsDoc);
           } else {
-            state[keyNode.name] = jsDoc.result;
+            state[keyNode.name] = jsDoc.result || '*';
           }
         } else {
           console.error('parseActions error: Unknown ObjectMethod key', keyNode);
@@ -585,7 +585,15 @@ function findJSDoc(node, defaultResult) {
 }
 
 function getJsDocFunction(jsDoc) {
-  return `function(${jsDoc.props.join(',')})${jsDoc.result === '*' ? '' : ':' + jsDoc.result}`;
+  let props = '';
+  if (jsDoc.props.length) {
+    props = '(' + jsDoc.props.join(',') + ')';
+  }
+  let result = '';
+  if (jsDoc.result) {
+    result = ':' + jsDoc.result;
+  }
+  return `function${props}${result}`;
 }
 
 function clean(ast) {
