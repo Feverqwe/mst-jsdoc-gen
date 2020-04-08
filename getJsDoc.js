@@ -220,7 +220,8 @@ const parseActions = (result, state) => {
         const keyNode = propPath.node.key;
         const valueNode = propPath.node.value;
         if (keyNode.type === 'Identifier') {
-          state[keyNode.name] = getModelMethods(valueNode);
+          const jsDoc = findJSDoc(propPath.node);
+          state[keyNode.name] = getModelMethods(valueNode, jsDoc);
         } else {
           console.error('parseActions error: Unknown ObjectProperty key', keyNode);
         }
@@ -229,10 +230,11 @@ const parseActions = (result, state) => {
         const keyNode = propPath.node.key;
         const bodyNode = propPath.node.body;
         if (keyNode.type === 'Identifier') {
+          const jsDoc = findJSDoc(propPath.node, '*');
           if (propPath.node.kind === 'method') {
-            state[keyNode.name] = 'function'
+            state[keyNode.name] = getJsDocFunction(jsDoc);
           } else {
-            state[keyNode.name] = '*';
+            state[keyNode.name] = jsDoc.result;
           }
         } else {
           console.error('parseActions error: Unknown ObjectMethod key', keyNode);
@@ -361,7 +363,7 @@ function getFloatModelProps(model) {
   return {type: `{${result.map(item => item.join(':')).join(',')}}`}
 }
 
-function getModelMethods(node) {
+function getModelMethods(node, jsDoc) {
   const walk = node => {
     switch (node.type) {
       case 'BlockStatement': {
@@ -369,7 +371,11 @@ function getModelMethods(node) {
       }
       case 'FunctionExpression':
       case 'ArrowFunctionExpression': {
-        return 'function';
+        if (jsDoc.result) {
+          return getJsDocFunction(jsDoc);
+        } else {
+          return 'function';
+        }
       }
       case 'CallExpression': {
         if (node.callee.type === 'Identifier' && node.callee.name === 'flow') {
@@ -553,6 +559,33 @@ function getModelStart(path) {
     }
   };
   return goBack(path);
+}
+
+function findJSDoc(node, defaultResult) {
+  const result = {
+    props: [],
+    inlineProps: '',
+    result: defaultResult,
+  };
+  if (node.leadingComments) {
+    node.leadingComments.forEach((commnet) => {
+      if (commnet.type === 'CommentBlock') {
+        const m = /@return\s+{([^}]+)}\s*/.exec(commnet.value);
+        if (m) {
+          result.result = m[1];
+        }
+        commnet.value.replace(/@param\s+{([^}]+)}\s*/g, (str, type) => {
+          result.props.push(type);
+          return '';
+        });
+      }
+    });
+  }
+  return result;
+}
+
+function getJsDocFunction(jsDoc) {
+  return `function(${jsDoc.props.join(',')})${jsDoc.result === '*' ? '' : ':' + jsDoc.result}`;
 }
 
 function clean(ast) {
