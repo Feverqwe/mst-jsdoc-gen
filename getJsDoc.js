@@ -6,7 +6,7 @@ const path = require('path');
 
 let code = fs.readFileSync(path.resolve('./model.js')).toString().trim();
 
-const ast = babel.transformSync(code, {
+const ast = clean(babel.transformSync(code, {
   ast: true,
   code: false,
   babelrc: false,
@@ -18,7 +18,7 @@ const ast = babel.transformSync(code, {
   parserOpts: {
     allowImportExportEverywhere: true
   }
-}).ast;
+}).ast);
 
 let id = 0;
 
@@ -367,6 +367,7 @@ function getModelMethods(node) {
       case 'BlockStatement': {
         return '*';
       }
+      case 'FunctionExpression':
       case 'ArrowFunctionExpression': {
         return 'function';
       }
